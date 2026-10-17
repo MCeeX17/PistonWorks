@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/PistonWorks/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="PistonWorks - workshop reception and bookings">
+  <meta name="theme-color" content="#07090C">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="PistonWorks">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <title>PistonWorks</title>
+  <style>
+    html,body{margin:0;height:100%;background:#07090C}
+    /* Shown while the Flutter engine downloads; fades out on the first Flutter frame. */
+    #pw-loader{position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      background:radial-gradient(ellipse at 50% 42%,#1b1f27 0%,#0d1015 55%,#07090c 100%);transition:opacity .7s ease}
+    #pw-loader.done{opacity:0;pointer-events:none}
+    #pw-loader img{width:min(80vw,460px);height:auto;filter:drop-shadow(0 0 22px rgba(249,115,22,.35));animation:pw-in 1s cubic-bezier(.2,.9,.3,1) both}
+    #pw-loader .bar{margin-top:32px;width:min(72vw,300px);height:8px;border-radius:99px;background:#1a1e26;border:1px solid #2a313d;overflow:hidden}
+    #pw-loader .bar i{display:block;height:100%;width:40%;border-radius:99px;background:linear-gradient(90deg,#ea580c,#f97316,#f59e0b);
+      box-shadow:0 0 12px rgba(249,115,22,.6);animation:pw-run 1.3s ease-in-out infinite}
+    @keyframes pw-in{from{opacity:0;transform:scale(.85) translateY(14px)}to{opacity:1;transform:none}}
+    @keyframes pw-run{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+  </style>
+</head>
+<body>
+  <div id="pw-loader">
+    <img src="splash/logo.png" alt="PistonWorks">
+    <div class="bar"><i></i></div>
+    <p id="pw-msg" style="display:none;max-width:min(80vw,420px);margin:18px 16px 0;color:#94a3b8;font:13px/1.4 system-ui,sans-serif;text-align:center"></p>
+    <button id="pw-reload" style="display:none;margin-top:12px;padding:10px 18px;border:0;border-radius:10px;background:#f97316;color:#fff;font:700 14px system-ui,sans-serif;cursor:pointer"
+      onclick="(async function(){try{var r=await navigator.serviceWorker.getRegistrations();for(var i=0;i<r.length;i++){await r[i].unregister();}var k=await caches.keys();for(var j=0;j<k.length;j++){await caches.delete(k[j]);}}catch(e){}location.reload();})()">Clear cache &amp; reload</button>
+  </div>
+  <script>
+    (function () {
+      var errs = [];
+      window.addEventListener('error', function (e) { errs.push(e.message || String(e)); });
+      window.addEventListener('unhandledrejection', function (e) { errs.push(String(e.reason)); });
+      // old Flutter service workers can serve stale files after a redeploy: remove them
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (rs) {
+          rs.forEach(function (r) {
+            var u = (r.active && r.active.scriptURL) || '';
+            if (u.indexOf('flutter_service_worker') > -1) r.unregister();
+          });
+        });
+      }
+      function hide() {
+        var l = document.getElementById('pw-loader');
+        if (l) { l.classList.add('done'); setTimeout(function () { if (l.parentNode) l.remove(); }, 800); }
+      }
+      window.addEventListener('flutter-first-frame', hide);
+      // fallback in case the event is missed: hide once Flutter has drawn its view
+      var poll = setInterval(function () {
+        if (document.querySelector('flutter-view, flt-glass-pane')) { clearInterval(poll); setTimeout(hide, 1200); }
+      }, 300);
+      // if still stuck after 15s, show what went wrong
+      setTimeout(function () {
+        var l = document.getElementById('pw-loader');
+        if (!l || l.classList.contains('done')) return;
+        var m = document.getElementById('pw-msg');
+        m.style.display = 'block';
+        m.textContent = 'Still starting… ' + (errs.length ? errs.slice(0, 2).join(' | ') : 'check your internet connection.');
+        document.getElementById('pw-reload').style.display = 'inline-block';
+      }, 15000);
+    })();
+  </script>
+  <script>
+    // ---- install-as-app + notification helpers (called from Flutter) ----
+    var pwDeferred = null, pwReg = null;
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); pwDeferred = e; });
+    window.addEventListener('appinstalled', function () { pwDeferred = null; });
+    window.pwCanInstall = function () { return !!pwDeferred; };
+    window.pwPromptInstall = function () {
+      if (!pwDeferred) return Promise.resolve(false);
+      var d = pwDeferred; pwDeferred = null; d.prompt();
+      return d.userChoice.then(function (c) { return c.outcome === 'accepted'; });
+    };
+    window.pwIsStandalone = function () {
+      return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    };
+    window.pwIsIOS = function () {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    };
+    window.pwNotifyPermission = function () { return ('Notification' in window) ? Notification.permission : 'unsupported'; };
+    window.pwAskNotify = function () {
+      if (!('Notification' in window)) return Promise.resolve('unsupported');
+      return Promise.resolve(Notification.requestPermission());
+    };
+    window.pwNotify = function (title, body, tag) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      if (document.hasFocus() && !document.hidden) return; // the in-app banner covers this case
+      var o = { body: body, icon: 'icons/Icon-192.png', badge: 'icons/Icon-192.png', tag: tag || 'pw', renotify: true, vibrate: [120, 60, 120] };
+      if (pwReg) { pwReg.showNotification(title, o); } else { try { new Notification(title, o); } catch (e) {} }
+    };
+    window.pwSetBadge = function (n) {
+      document.title = n > 0 ? '(' + n + ') PistonWorks' : 'PistonWorks';
+      try { if (navigator.setAppBadge) { if (n > 0) { navigator.setAppBadge(n); } else { navigator.clearAppBadge(); } } } catch (e) {}
+    };
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('pw-sw.js')
+          .then(function () { return navigator.serviceWorker.ready; })
+          .then(function (r) { pwReg = r; })
+          .catch(function () {});
+      });
+    }
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
